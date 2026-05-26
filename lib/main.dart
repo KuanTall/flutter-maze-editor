@@ -50,8 +50,121 @@ class RoomPainter extends CustomPainter {
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    canvas.drawRect(rect, paint);
+    final w = size.width;
+    final h = size.height;
+
+    // 中間缺口大小
+    final gap = w * 0.4;
+
+    // =====================
+    // 北邊
+    // =====================
+    canvas.drawLine(
+      Offset(0, 0),
+      Offset((w - gap) / 2, 0),
+      paint,
+    );
+
+    canvas.drawLine(
+      Offset((w + gap) / 2, 0),
+      Offset(w, 0),
+      paint,
+    );
+
+    // =====================
+    // 南邊
+    // =====================
+    canvas.drawLine(
+      Offset(0, h),
+      Offset((w - gap) / 2, h),
+      paint,
+    );
+
+    canvas.drawLine(
+      Offset((w + gap) / 2, h),
+      Offset(w, h),
+      paint,
+    );
+
+    // =====================
+    // 西邊
+    // =====================
+    canvas.drawLine(
+      Offset(0, 0),
+      Offset(0, (h - gap) / 2),
+      paint,
+    );
+
+    canvas.drawLine(
+      Offset(0, (h + gap) / 2),
+      Offset(0, h),
+      paint,
+    );
+
+    // =====================
+    // 東邊
+    // =====================
+    canvas.drawLine(
+      Offset(w, 0),
+      Offset(w, (h - gap) / 2),
+      paint,
+    );
+
+    canvas.drawLine(
+      Offset(w, (h + gap) / 2),
+      Offset(w, h),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class WallPainter extends CustomPainter {
+  final Direction direction;
+
+  WallPainter(this.direction);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 2;
+
+    switch (direction) {
+      case Direction.east:
+        canvas.drawLine(
+          Offset(0, 0),
+          Offset(0, size.height),
+          paint,
+        );
+        break;
+
+      case Direction.west:
+        canvas.drawLine(
+          Offset(size.width, 0),
+          Offset(size.width, size.height),
+          paint,
+        );
+        break;
+
+      case Direction.north:
+        canvas.drawLine(
+          Offset(0, size.height),
+          Offset(size.width, size.height),
+          paint,
+        );
+        break;
+
+      case Direction.south:
+        canvas.drawLine(
+          Offset(0, 0),
+          Offset(size.width, 0),
+          paint,
+        );
+        break;
+    }
   }
 
   @override
@@ -65,80 +178,68 @@ class DirectionTrianglePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    Path getPath() {
-      final path = Path();
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
 
-      switch (direction) {
-        case Direction.east: {
-          final w = size.width * 0.4;
-          final h = size.height * 0.4;
-          final cy = size.height / 2;
-          final overlap = 2.0;
-          
-          path.moveTo(-overlap, cy - h / 2);
-          path.lineTo(-overlap, cy + h / 2);
-          path.lineTo(w, cy);
-          path.close();
-          break;
-        }
+    final w = size.width;
+    final h = size.height;
 
-        case Direction.west: {
-          final w = size.width * 0.35;
-          final h = size.height * 0.35;
-          final cy = size.height / 2;
+    // ===== 幾何參數 =====
+    final span = w * 0.4; // 牆上左右展開
+    final depth = h * 0.4; // 往房間內縮
 
-          path.moveTo(size.width, cy - h / 2);
-          path.lineTo(size.width, cy + h / 2);
-          path.lineTo(size.width - w, cy);
-          break;
-        }
+    late Offset c; // 牆中心
+    late Offset left;
+    late Offset right;
+    late Offset tip;
 
-        case Direction.north: {
-          final w = size.width * 0.35;
-          final h = size.height * 0.35;
-          final cx = size.width / 2;
+    switch (direction) {
+      // ================= EAST（右牆）
+      case Direction.east:
+        c = Offset(0, h / 2);
 
-          path.moveTo(cx - w / 2, size.height);
-          path.lineTo(cx + w / 2, size.height);
-          path.lineTo(cx, size.height - h);
-          break;
-        }
+        left = Offset(c.dx, c.dy - span);
+        right = Offset(c.dx, c.dy + span);
+        tip = Offset(c.dx + span, c.dy);
+        break;
 
-        case Direction.south: {
-          final w = size.width * 0.35;
-          final h = size.height * 0.35;
-          final cx = size.width / 2;
+      // ================= WEST（左牆）
+      case Direction.west:
+        c = Offset(w, h / 2);
 
-          path.moveTo(cx - w / 2, 0);
-          path.lineTo(cx + w / 2, 0);
-          path.lineTo(cx, h);
-          break;
-        }
-      }
+        left = Offset(c.dx, c.dy - span);
+        right = Offset(c.dx, c.dy + span);
+        tip = Offset(c.dx - span, c.dy);
+        break;
 
-      path.close();
-      return path;
+      // ================= NORTH（上牆）
+      case Direction.north:
+        c = Offset(w / 2, h);
+
+        left = Offset(c.dx - depth, c.dy);
+        right = Offset(c.dx + depth, c.dy);
+        tip = Offset(c.dx, c.dy - depth);
+        break;
+
+      // ================= SOUTH（下牆）
+      case Direction.south:
+        c = Offset(w / 2, 0);
+
+        left = Offset(c.dx - depth, c.dy);
+        right = Offset(c.dx + depth, c.dy);
+        tip = Offset(c.dx, c.dy + depth);
+        break;
     }
 
-    final path = getPath();
-
-    // ✔ 1. 黑色邊框
-    final stroke = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    // ✔ 2. 白色填充
-    final fill = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-
-    canvas.drawPath(path, stroke);
-    canvas.drawPath(path, fill);
+    // ===== 畫兩條線 =====
+    canvas.drawLine(left, tip, paint);
+    canvas.drawLine(right, tip, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class MazePage extends StatefulWidget {
@@ -201,6 +302,59 @@ class _MazePageState extends State<MazePage> {
     
   }
 
+  Room? getRoom(int x, int y) {
+    try {
+      return rooms.firstWhere((r) => r.x == x && r.y == y);
+    } catch (_) {
+      return null;
+    }
+  }
+  
+  Direction opposite(Direction d) {
+    switch (d) {
+      case Direction.north:
+        return Direction.south;
+      case Direction.south:
+        return Direction.north;
+      case Direction.east:
+        return Direction.west;
+      case Direction.west:
+        return Direction.east;
+    }
+  }
+
+  bool isOppositeOpen(Room target, int dx, int dy) {
+    if (dx == 1) return target.west;
+    if (dx == -1) return target.east;
+    if (dy == 1) return target.north;
+    if (dy == -1) return target.south;
+    return false;
+  }
+
+  bool isCurrentOpen(Room room, int dx, int dy) {
+    if (dx == 1) return room.east;
+    if (dx == -1) return room.west;
+    if (dy == 1) return room.south;
+    if (dy == -1) return room.north;
+    return false;
+  }
+  
+  void closeBothDoors(Room a, Room b, int dx, int dy) {
+    if (dx == 1) {
+      a.east = false;
+      b.west = false;
+    } else if (dx == -1) {
+      a.west = false;
+      b.east = false;
+    } else if (dy == 1) {
+      a.south = false;
+      b.north = false;
+    } else if (dy == -1) {
+      a.north = false;
+      b.south = false;
+    }
+  }
+
   void connectRoom(Room room, int dx, int dy) {
     if (dx == 1) {
       room.east = true;
@@ -211,6 +365,7 @@ class _MazePageState extends State<MazePage> {
     } else if (dy == -1) {
       room.north = true;
     }
+    
   }
 
   @override
@@ -221,6 +376,23 @@ class _MazePageState extends State<MazePage> {
         child: Stack(
           children: [
             ...rooms.map((room) {
+              final neighborE = getRoom(room.x + 1, room.y);
+              final neighborW = getRoom(room.x - 1, room.y);
+              final neighborN = getRoom(room.x, room.y - 1);
+              final neighborS = getRoom(room.x, room.y + 1);
+              // EAST
+              final showEast = room.east && !(neighborE?.west ?? false);
+              final wallEast =!room.east && !(neighborE?.west ?? false);
+              // WEST
+              final showWest = room.west && !(neighborW?.east ?? false);
+              final wallWest =!room.west && !(neighborW?.east ?? false);
+              // NORTH
+              final showNorth = room.north && !(neighborN?.south ?? false);
+              final wallNorth =!room.north && !(neighborN?.south ?? false);
+              // SOUTH
+              final showSouth = room.south && !(neighborS?.north ?? false);
+              final wallSouth =!room.south && !(neighborS?.north ?? false);
+
               return Positioned(
                 left: room.x * spacing,
                 top: room.y * spacing,
@@ -269,15 +441,25 @@ class _MazePageState extends State<MazePage> {
                     final exists = rooms.any((r) => r.x == newX && r.y == newY);
                     final dxDir = newX - room.x;
                     final dyDir = newY - room.y;
-                    connectRoom(room, dxDir, dyDir);
-                    if (!exists) {
-                      setState(() {
-                        rooms.add(Room(x: newX, y: newY));
-                      });
-                    }
-                    startPoint = null;
-                    endPoint = null;
+                    final targetRoom = getRoom(newX, newY);
+
                     setState(() {
+                      final currentOpen = isCurrentOpen(room, dxDir, dyDir);
+                      final oppositeOpen =
+                          targetRoom != null && isOppositeOpen(targetRoom, dxDir, dyDir);
+
+                      if (targetRoom != null && currentOpen && oppositeOpen) {
+                        closeBothDoors(room, targetRoom, dxDir, dyDir);
+                      } else {
+                        connectRoom(room, dxDir, dyDir);
+                    
+                        if (!exists) {
+                          rooms.add(Room(x: newX, y: newY));
+                        }
+                      }
+                    
+                      startPoint = null;
+                      endPoint = null;
                       previewX = null;
                       previewY = null;
                     });
@@ -286,11 +468,11 @@ class _MazePageState extends State<MazePage> {
                     clipBehavior: Clip.none,
                     children: [
                       CustomPaint(
-                        size: Size(roomSize, roomSize),
+                        size: Size(roomSize-2, roomSize-2),
                         painter: RoomPainter(),
                       ),
                       // 東邊箭頭
-                      if (room.east)
+                      if (showEast)
                         Positioned(
                           right: -roomSize / 2,
                           top: 0,
@@ -302,8 +484,20 @@ class _MazePageState extends State<MazePage> {
                             ),
                           ),
                         ),
+                      if (wallEast)
+                        Positioned(
+                          right: -roomSize / 2,
+                          top: 0,
+                          child: SizedBox(
+                            width: roomSize / 2,
+                            height: roomSize,
+                            child: CustomPaint(
+                              painter: WallPainter(Direction.east),
+                            ),
+                          ),
+                        ),
                       // 西邊箭頭
-                      if (room.west)
+                      if (showWest)
                         Positioned(
                           left: -roomSize / 2,
                           top: 0,
@@ -315,8 +509,20 @@ class _MazePageState extends State<MazePage> {
                             ),
                           ),
                         ),
+                      if (wallWest)
+                        Positioned(
+                          left: -roomSize / 2,
+                          top: 0,
+                          child: SizedBox(
+                            width: roomSize / 2,
+                            height: roomSize,
+                            child: CustomPaint(
+                              painter: WallPainter(Direction.west),
+                            ),
+                          ),
+                        ),
                       // 南邊箭頭
-                      if (room.south)
+                      if (showSouth)
                         Positioned(
                           bottom: -roomSize / 2,
                           left: 0,
@@ -328,8 +534,20 @@ class _MazePageState extends State<MazePage> {
                             ),
                           ),
                         ),
+                      if (wallSouth)
+                        Positioned(
+                          bottom: -roomSize / 2,
+                          left: 0,
+                          child: SizedBox(
+                            width: roomSize,
+                            height: roomSize / 2,
+                            child: CustomPaint(
+                              painter: WallPainter(Direction.south),
+                            ),
+                          ),
+                        ),
                       // 北邊箭頭
-                      if (room.north)
+                      if (showNorth)
                         Positioned(
                           top: -roomSize / 2,
                           left: 0,
@@ -338,6 +556,18 @@ class _MazePageState extends State<MazePage> {
                             height: roomSize / 2,
                             child: CustomPaint(
                               painter: DirectionTrianglePainter(Direction.north),
+                            ),
+                          ),
+                        ),
+                      if (wallNorth)
+                        Positioned(
+                          top: -roomSize / 2,
+                          left: 0,
+                          child: SizedBox(
+                            width: roomSize,
+                            height: roomSize / 2,
+                            child: CustomPaint(
+                              painter: WallPainter(Direction.north),
                             ),
                           ),
                         ),
