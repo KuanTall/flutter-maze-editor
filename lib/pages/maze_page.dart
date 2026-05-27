@@ -10,10 +10,14 @@ import '../models/maze_save_data.dart';
 import '../models/maze_save_slot.dart';
 import '../models/room.dart';
 import '../painters/direction_triangle_painter.dart';
+import '../painters/direction_fill_painter.dart';
+import '../painters/path_painter.dart';
 import '../painters/room_painter.dart';
 import '../painters/wall_painter.dart';
 import '../storage/maze_cookie_storage.dart';
 import '../storage/maze_local_save_storage.dart';
+
+enum EditorMode { build, delete }
 
 class MazePage extends StatefulWidget {
   const MazePage({super.key});
@@ -31,11 +35,13 @@ class _MazePageState extends State<MazePage> {
   static const double roomSize = 50;
   static const double spacing = 48;
   static const double markerSize = 28;
+  static const double drawAdvanceThreshold = 0.85;
 
   Offset? startPoint;
   Offset? endPoint;
 
   List<GridPos> dragPath = [];
+  List<GridPos> deletePreviewPath = [];
 
   double lastDx = 0;
   double lastDy = 0;
@@ -50,6 +56,7 @@ class _MazePageState extends State<MazePage> {
   bool draggingStart = false;
   bool draggingGoal = false;
   bool isLoadPanelOpen = false;
+  EditorMode editorMode = EditorMode.build;
   int? deleteVisibleSaveIndex;
 
   Room? activeDrawRoom;
@@ -92,6 +99,7 @@ class _MazePageState extends State<MazePage> {
     startPoint = null;
     endPoint = null;
     dragPath = [];
+    deletePreviewPath = [];
     draggingStart = false;
     draggingGoal = false;
     activeDrawRoom = null;
@@ -130,6 +138,21 @@ class _MazePageState extends State<MazePage> {
       applyMazeSnapshot(next);
     });
     scheduleAutosave();
+  }
+
+  void toggleEditorMode() {
+    setState(() {
+      editorMode = editorMode == EditorMode.build
+          ? EditorMode.delete
+          : EditorMode.build;
+      startPoint = null;
+      endPoint = null;
+      dragPath = [];
+      deletePreviewPath = [];
+      activeDrawRoom = null;
+      draggingStart = false;
+      draggingGoal = false;
+    });
   }
 
   void showMessage(String message) {
@@ -403,7 +426,6 @@ class _MazePageState extends State<MazePage> {
           width: isLoadPanelOpen ? 280 : 0,
           curve: Curves.easeOut,
           decoration: const BoxDecoration(
-            color: Colors.white,
             border: Border(left: BorderSide(color: Colors.black12)),
             boxShadow: [
               BoxShadow(
@@ -414,95 +436,98 @@ class _MazePageState extends State<MazePage> {
             ],
           ),
           child: isLoadPanelOpen
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Map saves',
-                              style: TextStyle(fontWeight: FontWeight.w600),
+              ? Material(
+                  color: Colors.white,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Map saves',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip: 'Close',
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              setState(() {
-                                isLoadPanelOpen = false;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    if (autosave == null)
-                      const ListTile(
-                        leading: Icon(Icons.history),
-                        title: Text('Autosave'),
-                        subtitle: Text('No autosave yet'),
-                      )
-                    else
-                      ListTile(
-                        leading: const Icon(Icons.history),
-                        title: const Text('Autosave'),
-                        subtitle: Text('${autosave.rooms.length} rooms'),
-                        onTap: () {
-                          loadMaze(showFeedback: true);
-                          setState(() {
-                            isLoadPanelOpen = false;
-                            deleteVisibleSaveIndex = null;
-                          });
-                        },
-                      ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.add),
-                      title: const Text('Create new save'),
-                      onTap: createNamedSave,
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: collection.saves.isEmpty
-                          ? const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Text('No map saves'),
-                            )
-                          : ListView.builder(
-                              itemCount: collection.saves.length,
-                              itemBuilder: (context, index) {
-                                final save = collection.saves[index];
-                                final showDelete =
-                                    deleteVisibleSaveIndex == index;
-
-                                return ListTile(
-                                  leading: const Icon(Icons.map_outlined),
-                                  title: Text(save.name),
-                                  subtitle:
-                                      Text('${save.data.rooms.length} rooms'),
-                                  trailing: showDelete
-                                      ? IconButton(
-                                          tooltip: 'Delete',
-                                          icon: const Icon(Icons.delete),
-                                          onPressed: () =>
-                                              deleteSaveSlot(index),
-                                        )
-                                      : null,
-                                  onTap: () => loadSaveSlot(save.data),
-                                  onLongPress: () {
-                                    setState(() {
-                                      deleteVisibleSaveIndex = index;
-                                    });
-                                  },
-                                );
+                            IconButton(
+                              tooltip: 'Close',
+                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                setState(() {
+                                  isLoadPanelOpen = false;
+                                });
                               },
                             ),
-                    ),
-                  ],
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      if (autosave == null)
+                        const ListTile(
+                          leading: Icon(Icons.history),
+                          title: Text('Autosave'),
+                          subtitle: Text('No autosave yet'),
+                        )
+                      else
+                        ListTile(
+                          leading: const Icon(Icons.history),
+                          title: const Text('Autosave'),
+                          subtitle: Text('${autosave.rooms.length} rooms'),
+                          onTap: () {
+                            loadMaze(showFeedback: true);
+                            setState(() {
+                              isLoadPanelOpen = false;
+                              deleteVisibleSaveIndex = null;
+                            });
+                          },
+                        ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.add),
+                        title: const Text('Create new save'),
+                        onTap: createNamedSave,
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: collection.saves.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text('No map saves'),
+                              )
+                            : ListView.builder(
+                                itemCount: collection.saves.length,
+                                itemBuilder: (context, index) {
+                                  final save = collection.saves[index];
+                                  final showDelete =
+                                      deleteVisibleSaveIndex == index;
+
+                                  return ListTile(
+                                    leading: const Icon(Icons.map_outlined),
+                                    title: Text(save.name),
+                                    subtitle:
+                                        Text('${save.data.rooms.length} rooms'),
+                                    trailing: showDelete
+                                        ? IconButton(
+                                            tooltip: 'Delete',
+                                            icon: const Icon(Icons.delete),
+                                            onPressed: () =>
+                                                deleteSaveSlot(index),
+                                          )
+                                        : null,
+                                    onTap: () => loadSaveSlot(save.data),
+                                    onLongPress: () {
+                                      setState(() {
+                                        deleteVisibleSaveIndex = index;
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
                 )
               : const SizedBox.shrink(),
         ),
@@ -578,6 +603,67 @@ class _MazePageState extends State<MazePage> {
     return null;
   }
 
+  Room? findRoomFromDragPosition(Room originRoom, Offset localPosition) {
+    return findRoomUnderPoint(
+      Offset(
+        canvasCenter + originRoom.x * spacing + localPosition.dx,
+        canvasCenter + originRoom.y * spacing + localPosition.dy,
+      ),
+    );
+  }
+
+  void addDeletePreview(Room room) {
+    final pos = GridPos(room.x, room.y);
+    if (deletePreviewPath.contains(pos)) return;
+
+    setState(() {
+      deletePreviewPath.add(pos);
+    });
+  }
+
+  void removeRoomLinks(Room room) {
+    final east = getRoom(room.x + 1, room.y);
+    if (east != null) east.west = false;
+
+    final west = getRoom(room.x - 1, room.y);
+    if (west != null) west.east = false;
+
+    final north = getRoom(room.x, room.y - 1);
+    if (north != null) north.south = false;
+
+    final south = getRoom(room.x, room.y + 1);
+    if (south != null) south.north = false;
+  }
+
+  void applyDeletePreview() {
+    if (deletePreviewPath.isEmpty) return;
+
+    setState(() {
+      rememberForUndo();
+      final deleteSet = deletePreviewPath.toSet();
+
+      for (final room in rooms.where(
+        (room) => deleteSet.contains(GridPos(room.x, room.y)),
+      )) {
+        removeRoomLinks(room);
+      }
+
+      rooms.removeWhere(
+        (room) => deleteSet.contains(GridPos(room.x, room.y)),
+      );
+
+      if (rooms.isEmpty) {
+        rooms.add(Room(x: 0, y: 0));
+        startMarker = defaultStartMarker;
+        goalMarker = defaultGoalMarker;
+      }
+
+      deletePreviewPath = [];
+    });
+
+    scheduleAutosave();
+  }
+
   GridPos? markerRoom(Offset? marker) {
     if (marker == null) return null;
 
@@ -600,21 +686,19 @@ class _MazePageState extends State<MazePage> {
     final dx = localPosition.dx - lastCenter.dx;
     final dy = localPosition.dy - lastCenter.dy;
 
-    const threshold = 0.65;
-
-    if (dx > spacing * threshold) {
+    if (dx > spacing * drawAdvanceThreshold) {
       return GridPos(last.x + 1, last.y);
     }
 
-    if (dx < -spacing * threshold) {
+    if (dx < -spacing * drawAdvanceThreshold) {
       return GridPos(last.x - 1, last.y);
     }
 
-    if (dy > spacing * threshold) {
+    if (dy > spacing * drawAdvanceThreshold) {
       return GridPos(last.x, last.y + 1);
     }
 
-    if (dy < -spacing * threshold) {
+    if (dy < -spacing * drawAdvanceThreshold) {
       return GridPos(last.x, last.y - 1);
     }
 
@@ -625,6 +709,81 @@ class _MazePageState extends State<MazePage> {
     final dx = (a.x - b.x).abs();
     final dy = (a.y - b.y).abs();
     return dx + dy == 1;
+  }
+
+  Offset roomCenter(GridPos pos) {
+    return Offset(
+      canvasCenter + pos.x * spacing + (roomSize - 2) / 2,
+      canvasCenter + pos.y * spacing + (roomSize - 2) / 2,
+    );
+  }
+
+  bool canMoveBetween(Room from, Room to) {
+    final dx = to.x - from.x;
+    final dy = to.y - from.y;
+
+    if (dx.abs() + dy.abs() != 1) return false;
+
+    return isCurrentOpen(from, dx, dy);
+  }
+
+  List<GridPos> pathNeighbors(GridPos pos) {
+    final room = getRoom(pos.x, pos.y);
+    if (room == null) return const [];
+
+    final candidates = [
+      GridPos(pos.x + 1, pos.y),
+      GridPos(pos.x - 1, pos.y),
+      GridPos(pos.x, pos.y + 1),
+      GridPos(pos.x, pos.y - 1),
+    ];
+
+    return candidates.where((candidate) {
+      final nextRoom = getRoom(candidate.x, candidate.y);
+      if (nextRoom == null) return false;
+      return canMoveBetween(room, nextRoom);
+    }).toList();
+  }
+
+  List<GridPos> findBestPath() {
+    if (draggingStart || draggingGoal) return const [];
+
+    final start = markerRoom(startMarker);
+    final goal = markerRoom(goalMarker);
+
+    if (start == null || goal == null) return const [];
+    if (start == goal) return [start];
+
+    final queue = <GridPos>[start];
+    final visited = <GridPos>{start};
+    final cameFrom = <GridPos, GridPos>{};
+
+    for (var index = 0; index < queue.length; index++) {
+      final current = queue[index];
+
+      for (final next in pathNeighbors(current)) {
+        if (visited.contains(next)) continue;
+
+        visited.add(next);
+        cameFrom[next] = current;
+
+        if (next == goal) {
+          final path = <GridPos>[goal];
+          var step = goal;
+
+          while (step != start) {
+            step = cameFrom[step]!;
+            path.add(step);
+          }
+
+          return path.reversed.toList();
+        }
+
+        queue.add(next);
+      }
+    }
+
+    return const [];
   }
 
   Room? getRoom(int x, int y) {
@@ -677,6 +836,269 @@ class _MazePageState extends State<MazePage> {
     } else if (dy == -1) {
       room.north = true;
     }
+  }
+
+  Color? roomHighlightColor(Room room) {
+    final pos = GridPos(room.x, room.y);
+    Color? fillColor;
+
+    if (!draggingStart && markerRoom(startMarker) == pos) {
+      fillColor = Colors.green;
+    }
+
+    if (!draggingGoal && markerRoom(goalMarker) == pos) {
+      fillColor = Colors.red;
+    }
+
+    if (deletePreviewPath.contains(pos)) {
+      fillColor = Colors.red.withValues(alpha: 0.35);
+    }
+
+    return fillColor;
+  }
+
+  Color roomArrowFillColor(Room room) {
+    return roomHighlightColor(room) ?? Colors.white;
+  }
+
+  Widget buildDirectionArrow({
+    required Direction direction,
+    required Color fillColor,
+  }) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: DirectionFillPainter(
+              direction: direction,
+              color: fillColor,
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: CustomPaint(
+            painter: DirectionTrianglePainter(direction),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget buildDirectionFill({
+    required Direction direction,
+    required Color fillColor,
+    required double? left,
+    required double? top,
+    required double? right,
+    required double? bottom,
+    required double width,
+    required double height,
+  }) {
+    return Positioned(
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: CustomPaint(
+          painter: DirectionFillPainter(direction: direction, color: fillColor),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> buildRoomFillExtensions({
+    required Color? fillColor,
+    required bool showEast,
+    required bool showWest,
+    required bool showSouth,
+    required bool showNorth,
+  }) {
+    if (fillColor == null) return const [];
+
+    return [
+      if (showEast)
+        buildDirectionFill(
+          direction: Direction.east,
+          fillColor: fillColor,
+          left: null,
+          top: 0,
+          right: -roomSize / 2,
+          bottom: null,
+          width: roomSize / 2,
+          height: roomSize,
+        ),
+      if (showWest)
+        buildDirectionFill(
+          direction: Direction.west,
+          fillColor: fillColor,
+          left: -roomSize / 2,
+          top: 0,
+          right: null,
+          bottom: null,
+          width: roomSize / 2,
+          height: roomSize,
+        ),
+      if (showSouth)
+        buildDirectionFill(
+          direction: Direction.south,
+          fillColor: fillColor,
+          left: 0,
+          top: null,
+          right: null,
+          bottom: -roomSize / 2,
+          width: roomSize,
+          height: roomSize / 2,
+        ),
+      if (showNorth)
+        buildDirectionFill(
+          direction: Direction.north,
+          fillColor: fillColor,
+          left: 0,
+          top: -roomSize / 2,
+          right: null,
+          bottom: null,
+          width: roomSize,
+          height: roomSize / 2,
+        ),
+    ];
+  }
+
+  List<Widget> buildIncomingRoomFillExtensions({
+    required Room room,
+    required Room? neighborE,
+    required Room? neighborW,
+    required Room? neighborN,
+    required Room? neighborS,
+  }) {
+    final eastFill = neighborE == null ? null : roomHighlightColor(neighborE);
+    final westFill = neighborW == null ? null : roomHighlightColor(neighborW);
+    final northFill = neighborN == null ? null : roomHighlightColor(neighborN);
+    final southFill = neighborS == null ? null : roomHighlightColor(neighborS);
+
+    return [
+      if (neighborE?.west == true && !room.east && eastFill != null)
+        buildDirectionFill(
+          direction: Direction.west,
+          fillColor: eastFill,
+          left: (roomSize - 2) / 2,
+          top: 0,
+          right: null,
+          bottom: null,
+          width: roomSize / 2,
+          height: roomSize,
+        ),
+      if (neighborW?.east == true && !room.west && westFill != null)
+        buildDirectionFill(
+          direction: Direction.east,
+          fillColor: westFill,
+          left: 0,
+          top: 0,
+          right: null,
+          bottom: null,
+          width: roomSize / 2,
+          height: roomSize,
+        ),
+      if (neighborS?.north == true && !room.south && southFill != null)
+        buildDirectionFill(
+          direction: Direction.north,
+          fillColor: southFill,
+          left: 0,
+          top: (roomSize - 2) / 2,
+          right: null,
+          bottom: null,
+          width: roomSize,
+          height: roomSize / 2,
+        ),
+      if (neighborN?.south == true && !room.north && northFill != null)
+        buildDirectionFill(
+          direction: Direction.south,
+          fillColor: northFill,
+          left: 0,
+          top: 0,
+          right: null,
+          bottom: null,
+          width: roomSize,
+          height: roomSize / 2,
+        ),
+    ];
+  }
+
+  List<Widget> buildVisibleArrowOverlays({
+    required Room room,
+    required bool showEast,
+    required bool showWest,
+    required bool showSouth,
+    required bool showNorth,
+  }) {
+    final left = canvasCenter + room.x * spacing;
+    final top = canvasCenter + room.y * spacing;
+    final fillColor = roomArrowFillColor(room);
+
+    return [
+      if (showEast)
+        Positioned(
+          left: left + roomSize - 2,
+          top: top,
+          child: IgnorePointer(
+            child: SizedBox(
+              width: roomSize / 2,
+              height: roomSize,
+              child: buildDirectionArrow(
+                direction: Direction.east,
+                fillColor: fillColor,
+              ),
+            ),
+          ),
+        ),
+      if (showWest)
+        Positioned(
+          left: left - roomSize / 2,
+          top: top,
+          child: IgnorePointer(
+            child: SizedBox(
+              width: roomSize / 2,
+              height: roomSize,
+              child: buildDirectionArrow(
+                direction: Direction.west,
+                fillColor: fillColor,
+              ),
+            ),
+          ),
+        ),
+      if (showSouth)
+        Positioned(
+          left: left,
+          top: top + roomSize - 2,
+          child: IgnorePointer(
+            child: SizedBox(
+              width: roomSize,
+              height: roomSize / 2,
+              child: buildDirectionArrow(
+                direction: Direction.south,
+                fillColor: fillColor,
+              ),
+            ),
+          ),
+        ),
+      if (showNorth)
+        Positioned(
+          left: left,
+          top: top - roomSize / 2,
+          child: IgnorePointer(
+            child: SizedBox(
+              width: roomSize,
+              height: roomSize / 2,
+              child: buildDirectionArrow(
+                direction: Direction.north,
+                fillColor: fillColor,
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
   @override
@@ -755,6 +1177,8 @@ class _MazePageState extends State<MazePage> {
                   scheduleAutosave();
                 },
                 builder: (context, candidateData, rejectedData) {
+                  final bestPath = findBestPath();
+
                   return Stack(
                     children: [
                       ...rooms.map((room) {
@@ -787,15 +1211,7 @@ class _MazePageState extends State<MazePage> {
                         ? null
                         : markerRoom(goalMarker);
 
-                    Color? roomFillColor;
-
-                    if (startRoom == GridPos(room.x, room.y)) {
-                      roomFillColor = Colors.green;
-                    }
-
-                    if (goalRoom == GridPos(room.x, room.y)) {
-                      roomFillColor = Colors.red;
-                    }
+                    final roomFillColor = roomHighlightColor(room);
 
                     final isStartRoom = startRoom == GridPos(room.x, room.y);
                     final isGoalRoom = goalRoom == GridPos(room.x, room.y);
@@ -804,7 +1220,22 @@ class _MazePageState extends State<MazePage> {
                       left: canvasCenter + room.x * spacing,
                       top: canvasCenter + room.y * spacing,
                       child: GestureDetector(
+                        onTapDown: (_) {
+                          if (editorMode != EditorMode.delete) return;
+                          addDeletePreview(room);
+                        },
+                        onTapUp: (_) {
+                          if (editorMode != EditorMode.delete) return;
+                          applyDeletePreview();
+                        },
+                        onTapCancel: () {
+                          if (editorMode != EditorMode.delete) return;
+                          setState(() {
+                            deletePreviewPath = [];
+                          });
+                        },
                         onDoubleTapDown: (details) {
+                          if (editorMode == EditorMode.delete) return;
                           setState(() {
                             activeDrawRoom = room;
                             startPoint = details.localPosition;
@@ -812,6 +1243,11 @@ class _MazePageState extends State<MazePage> {
                           });
                         },
                         onPanStart: (details) {
+                          if (editorMode == EditorMode.delete) {
+                            addDeletePreview(room);
+                            return;
+                          }
+
                           final roomCenter = Offset(
                             canvasCenter +
                                 room.x * spacing +
@@ -845,6 +1281,17 @@ class _MazePageState extends State<MazePage> {
                           dragPath = [GridPos(room.x, room.y)];
                         },
                         onPanUpdate: (details) {
+                          if (editorMode == EditorMode.delete) {
+                            final roomUnderPointer = findRoomFromDragPosition(
+                              room,
+                              details.localPosition,
+                            );
+                            if (roomUnderPointer != null) {
+                              addDeletePreview(roomUnderPointer);
+                            }
+                            return;
+                          }
+
                           if (draggingStart || draggingGoal) {
                             final local = Offset(
                               canvasCenter +
@@ -895,6 +1342,11 @@ class _MazePageState extends State<MazePage> {
                           }
                         },
                         onPanEnd: (_) {
+                          if (editorMode == EditorMode.delete) {
+                            applyDeletePreview();
+                            return;
+                          }
+
                           if (draggingStart || draggingGoal) {
                             final marker = draggingStart
                                 ? startMarker
@@ -1006,10 +1458,9 @@ class _MazePageState extends State<MazePage> {
                                 child: SizedBox(
                                   width: roomSize / 2,
                                   height: roomSize,
-                                  child: CustomPaint(
-                                    painter: DirectionTrianglePainter(
-                                      Direction.east,
-                                    ),
+                                  child: buildDirectionArrow(
+                                    direction: Direction.east,
+                                    fillColor: roomArrowFillColor(room),
                                   ),
                                 ),
                               ),
@@ -1032,10 +1483,9 @@ class _MazePageState extends State<MazePage> {
                                 child: SizedBox(
                                   width: roomSize / 2,
                                   height: roomSize,
-                                  child: CustomPaint(
-                                    painter: DirectionTrianglePainter(
-                                      Direction.west,
-                                    ),
+                                  child: buildDirectionArrow(
+                                    direction: Direction.west,
+                                    fillColor: roomArrowFillColor(room),
                                   ),
                                 ),
                               ),
@@ -1058,10 +1508,9 @@ class _MazePageState extends State<MazePage> {
                                 child: SizedBox(
                                   width: roomSize,
                                   height: roomSize / 2,
-                                  child: CustomPaint(
-                                    painter: DirectionTrianglePainter(
-                                      Direction.south,
-                                    ),
+                                  child: buildDirectionArrow(
+                                    direction: Direction.south,
+                                    fillColor: roomArrowFillColor(room),
                                   ),
                                 ),
                               ),
@@ -1084,10 +1533,9 @@ class _MazePageState extends State<MazePage> {
                                 child: SizedBox(
                                   width: roomSize,
                                   height: roomSize / 2,
-                                  child: CustomPaint(
-                                    painter: DirectionTrianglePainter(
-                                      Direction.north,
-                                    ),
+                                  child: buildDirectionArrow(
+                                    direction: Direction.north,
+                                    fillColor: roomArrowFillColor(room),
                                   ),
                                 ),
                               ),
@@ -1122,6 +1570,30 @@ class _MazePageState extends State<MazePage> {
                       ),
                     );
                   }),
+                  ...rooms.expand((room) {
+                    final neighborE = getRoom(room.x + 1, room.y);
+                    final neighborW = getRoom(room.x - 1, room.y);
+                    final neighborN = getRoom(room.x, room.y - 1);
+                    final neighborS = getRoom(room.x, room.y + 1);
+
+                    return buildVisibleArrowOverlays(
+                      room: room,
+                      showEast: room.east && !(neighborE?.west ?? false),
+                      showWest: room.west && !(neighborW?.east ?? false),
+                      showSouth: room.south && !(neighborS?.north ?? false),
+                      showNorth: room.north && !(neighborN?.south ?? false),
+                    );
+                  }),
+                  if (bestPath.length >= 2)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: PathPainter(
+                            points: bestPath.map(roomCenter).toList(),
+                          ),
+                        ),
+                      ),
+                    ),
                   buildMarker(position: startMarker, color: Colors.green),
                   buildMarker(position: goalMarker, color: Colors.red),
                 ],
@@ -1149,6 +1621,25 @@ class _MazePageState extends State<MazePage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    IconButton(
+                      tooltip: editorMode == EditorMode.build
+                          ? 'Build mode'
+                          : 'Delete mode',
+                      icon: Icon(
+                        editorMode == EditorMode.build
+                            ? Icons.add_box_outlined
+                            : Icons.remove_circle_outline,
+                      ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: editorMode == EditorMode.delete
+                            ? Colors.red.withValues(alpha: 0.12)
+                            : null,
+                        foregroundColor: editorMode == EditorMode.delete
+                            ? Colors.red
+                            : null,
+                      ),
+                      onPressed: toggleEditorMode,
+                    ),
                     IconButton(
                       tooltip: 'Undo',
                       icon: const Icon(Icons.undo),

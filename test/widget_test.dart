@@ -11,6 +11,7 @@ void main() {
     expect(find.byType(MaterialApp), findsOneWidget);
     expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(find.byType(Draggable<Color>), findsWidgets);
+    expect(find.byIcon(Icons.add_box_outlined), findsOneWidget);
     expect(find.byIcon(Icons.undo), findsOneWidget);
     expect(find.byIcon(Icons.redo), findsOneWidget);
     expect(find.byIcon(Icons.folder_open), findsOneWidget);
